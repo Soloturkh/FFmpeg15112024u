@@ -25,6 +25,8 @@
  */
 
 #include "config_components.h"
+#include <stdint.h>
+#include <unistd.h>
 
 #include <time.h>
 
@@ -67,6 +69,7 @@ typedef enum {
 
 #define SEGMENT_LIST_FLAG_CACHE 1
 #define SEGMENT_LIST_FLAG_LIVE  2
+#define SEGMENT_LIST_FLAG_DELETE 3
 
 typedef struct SegmentContext {
     const AVClass *class;  /**< Class for private options. */
@@ -127,6 +130,8 @@ typedef struct SegmentContext {
     SegmentListEntry cur_entry;
     SegmentListEntry *segment_list_entries;
     SegmentListEntry *segment_list_entries_end;
+    SegmentListEntry *defans_list_entries;
+    SegmentListEntry *defans_list_entries_end;
 } SegmentContext;
 
 static void print_csv_escaped_str(AVIOContext *ctx, const char *str)
@@ -143,6 +148,55 @@ static void print_csv_escaped_str(AVIOContext *ctx, const char *str)
     }
     if (needs_quoting)
         avio_w8(ctx, '"');
+}
+
+//defans
+static int segment_delete_old_segments(AVFormatContext *s)
+{
+    SegmentContext *seg = s->priv_data;
+    char full_path[1024];  // Tam yolu saklamak için bir buffer
+    char *base_path;
+    if (seg->list) {
+        if (seg->list_size || seg->list_type == LIST_TYPE_M3U8) {
+            SegmentListEntry *entry = av_mallocz(sizeof(*entry));
+            if (!entry) {
+                return AVERROR(ENOMEM);
+            }
+            /* append new element */
+            memcpy(entry, &seg->cur_entry, sizeof(*entry));
+            entry->filename = av_strdup(entry->filename);
+            if (!entry->filename) {
+                av_free(entry);
+                return AVERROR(ENOMEM);
+            }
+            if (!seg->defans_list_entries)
+                seg->defans_list_entries = seg->defans_list_entries_end = entry;
+            else
+                seg->defans_list_entries_end->next = entry;
+            seg->defans_list_entries_end = entry;
+            /* drop first item */
+            if (seg->list_size && seg->segment_count >= (( 2 * seg->list_size ) + 1)) {
+                entry = seg->defans_list_entries;
+                // s->url'den av_basename(s->url)'i çıkarıp kalanı kullan
+                base_path = av_strdup(s->url);
+                if (!base_path) {
+                    av_free(entry->filename);
+                    av_free(entry);
+                    return AVERROR(ENOMEM);
+                }
+                *(strstr(base_path, av_basename(s->url))) = '\0';
+                snprintf(full_path, sizeof(full_path), "%s%s", base_path, entry->filename);
+                av_free(base_path);
+                if (unlink(full_path) != 0) {
+                    av_log(s, AV_LOG_WARNING, "Failed to delete old segment: %s\n", full_path);
+                }
+                seg->defans_list_entries = seg->defans_list_entries->next;
+                av_freep(&entry->filename);
+                av_freep(&entry);
+            }
+        } 
+    }
+    return 0;
 }
 
 static int segment_mux_init(AVFormatContext *s)
@@ -356,6 +410,10 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
     int i;
     int err;
 
+    if (seg->list_flags & SEGMENT_LIST_FLAG_DELETE) {
+        segment_delete_old_segments(s);
+    }
+    
     if (!oc || !oc->pb)
         return AVERROR(EINVAL);
 
@@ -1043,7 +1101,7 @@ static const AVOption options[] = {
     { "segment_list_flags","set flags affecting segment list generation", OFFSET(list_flags), AV_OPT_TYPE_FLAGS, {.i64 = SEGMENT_LIST_FLAG_CACHE }, 0, UINT_MAX, E, .unit = "list_flags"},
     { "cache",             "allow list caching",                                    0, AV_OPT_TYPE_CONST, {.i64 = SEGMENT_LIST_FLAG_CACHE }, INT_MIN, INT_MAX,   E, .unit = "list_flags"},
     { "live",              "enable live-friendly list generation (useful for HLS)", 0, AV_OPT_TYPE_CONST, {.i64 = SEGMENT_LIST_FLAG_LIVE }, INT_MIN, INT_MAX,    E, .unit = "list_flags"},
-
+    { "delete",            "delete segments",                                       0, AV_OPT_TYPE_CONST, {.i64 = SEGMENT_LIST_FLAG_DELETE }, INT_MIN, INT_MAX,  E, .unit = "list_flags"},
     { "segment_list_size", "set the maximum number of playlist entries", OFFSET(list_size), AV_OPT_TYPE_INT,  {.i64 = 0},     0, INT_MAX, E },
 
     { "segment_list_type", "set the segment list type",                  OFFSET(list_type), AV_OPT_TYPE_INT,  {.i64 = LIST_TYPE_UNDEFINED}, -1, LIST_TYPE_NB-1, E, .unit = "list_type" },
