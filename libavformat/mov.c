@@ -7424,7 +7424,9 @@ static int mov_parse_auxiliary_info(MOVContext *c, MOVStreamContext *sc, AVIOCon
         return AVERROR(ENOMEM);
 
     prev_pos = avio_tell(pb);
-    if (!(pb->seekable & AVIO_SEEKABLE_NORMAL) ||
+    //defans
+    if ((pb->seekable & AVIO_SEEKABLE_NORMAL) ||
+    //if (!(pb->seekable & AVIO_SEEKABLE_NORMAL) ||
         avio_seek(pb, encryption_index->auxiliary_offsets[0], SEEK_SET) != encryption_index->auxiliary_offsets[0]) {
         av_log(c->fc, AV_LOG_INFO, "Failed to seek for auxiliary info, will only parse senc atoms for encryption info\n");
         goto finish;
