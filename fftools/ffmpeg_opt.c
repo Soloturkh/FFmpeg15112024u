@@ -64,6 +64,8 @@ int do_benchmark      = 0;
 int do_benchmark_all  = 0;
 int do_hex_dump       = 0;
 int do_pkt_dump       = 0;
+//defans
+int nofix_dts         = 0;
 int copy_ts           = 0;
 int start_at_zero     = 0;
 int copy_tb           = -1;
@@ -1650,6 +1652,9 @@ const OptionDef options[] = {
     { "copyts",                 OPT_TYPE_BOOL, OPT_EXPERT,
         { &copy_ts },
         "copy timestamps" },
+    { "nofix_dts",              OPT_TYPE_BOOL, OPT_EXPERT, 
+        { &nofix_dts },
+        "do not fix DTS" },
     { "start_at_zero",          OPT_TYPE_BOOL, OPT_EXPERT,
         { &start_at_zero },
         "shift input timestamps to start at 0 when using copyts" },
